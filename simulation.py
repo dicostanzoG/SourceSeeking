@@ -8,16 +8,17 @@ class Simulation:
 
         self.xy = mesh['xy'][0][0]
         self.ele = mesh['ele'][0][0] - 1
-        self.shape = mesh['shape'][0][0]  # per calcolare phi e C, per ogni elemento, colonna j=vertice
+        self.shape = mesh['shape'][0][0]  # per calcolare phi e C, per ogni elemento, colonna j=vertice, interpolare
         self.stiffM = mesh['StiffM'][0][0]
         self.massM = mesh['MassM'][0][0]
         self.deltaT = 0.1
         self.time_steps = 10
-        self.u_k = 10  # 5, 10,... intensità sorgente
-        self.num_steps = 5
+        self.u_k = 20  # 5, 10,... intensità sorgente
+        #self.num_steps = 5
         self.n_vertices = len(self.xy[0])
         self.concentration_list = np.empty(n_agents)
         self.direction = 0
+        self.noise = random.gauss(0, 30)
 
         self.A_matrix = np.linalg.solve(self.massM + self.deltaT * self.stiffM,
                                         self.massM)  # np.linalg.inv(self.massM) * (self.massM + self.deltaT * self.stiffM) #
@@ -30,16 +31,12 @@ class Simulation:
         self.x_k = np.zeros((1, self.n_vertices))  # vettore concentrazioni al t k, inizialmente tutto 0
 
     def concentration(self, source_position):  # nei vertici della mesh
-        # for k in range(self.time_steps):
         self.F_vector = self.setFvector(source_position)
-        x_k_plus = self.A_matrix.dot(self.x_k.T) + self.B_matrix.dot(self.F_vector).dot(self.u_k)  # + random.gauss(0, 0.05)
-        # self.concentration_matrix.append(self.x_k)
+        x_k_plus = self.A_matrix.dot(self.x_k.T) + self.B_matrix.dot(self.F_vector).dot(self.u_k)             # self.concentration_matrix.append(self.x_k)
         self.x_k = x_k_plus.T
-        #print('self.x_k', np.min(self.x_k), np.max(self.x_k))
         return self.x_k
 
-    def setFvector(self,
-                   position):  # vettore tutti 0 tranne identificativi vertici del triangolo in cui si trova la sorgente
+    def setFvector(self, position):  # vettore tutti 0 tranne identificativi vertici del triangolo in cui si trova la sorgente
         for ie in range(self.ele.shape[1]):
             polygon_vertices = self.xy[:, self.ele[0:3, ie]]
             polygon = Polygon((polygon_vertices[:, 0], polygon_vertices[:, 1], polygon_vertices[:, 2]))
@@ -53,10 +50,10 @@ class Simulation:
                 #print('F', shapeN[0, 0], shapeN[0, 1], shapeN[0, 2])
         return self.F_vector
 
-    def get_FEM_functions(self, sample_points):  # sel elemento in cui si trova il pnt
+    def get_FEM_functions(self, sample_points):  # seleziona l'elemento in cui si trova l'agente
         spl_vertices = np.zeros((sample_points.shape[1], 3))  # contiene gli indici dei vertici dell'elemento
         spl_shape = np.zeros((sample_points.shape[1], 3))
-        for point in range(sample_points.shape[1]):  # pto agenti, per ogni punto verifica in quale elem sta
+        for point in range(sample_points.shape[1]):  # per ogni agente verifica in quale elemento si trova
             for ie in range(self.ele.shape[1]):
                 polygon_vertices = self.xy[:, self.ele[:3, ie]]
                 polygon = Polygon((polygon_vertices[:, 0], polygon_vertices[:, 1], polygon_vertices[:, 2]))
@@ -65,44 +62,38 @@ class Simulation:
                 if IN or ON:
                     spl_vertices[point, :] = self.ele[:3, ie]  # vertici dell'elemento in cui si trova ogni agente
                     spl_shape[point, :] = self.Get_shapeN_2D_DIFFUSION(ie, sample_points[:, point])  # ottengo Φ(i)
+        return spl_vertices.T, spl_shape.T
+                                                                                                                           # spl_shape=Φ(i)
 
-        return spl_vertices.T, spl_shape.T  # spl_shape=Φ(i)
-
-    def Get_shapeN_2D_DIFFUSION(self, element, point):  # ottengo Φ(i), i=vertice data pos agente
-        Nvertices = 3
-        shapeN = np.zeros((1, Nvertices))
-        for vertex in range(Nvertices):
-            # (self.shape[:, element][0][:, vertex])  # [:, element]=3 colonne che rappresentano i 3 vertici, [:, vertex]=vertice selezionato
+    def Get_shapeN_2D_DIFFUSION(self, element, point):  # ottengo Φ(i), i=vertice data posizione agente
+        n_vertices = 3
+        shapeN = np.zeros((1, n_vertices))
+        for vertex in range(n_vertices):                                                                     # (self.shape[:, element][0][:, vertex])  # [:, element]=3 colonne che rappresentano i 3 vertici, [:, vertex]=vertice selezionato
             shapeN[:, vertex] = np.dot((self.shape[:, element][0][:, vertex]), [1, point[0], point[1]])  # Φ(i)=a+bx+cy
-            #print('shapeN', self.shape[:, element][0][:, vertex]) POSSONO ESEERE NEG
-            #print('point', [1, point[0], point[1]])
+
         return shapeN
 
     def concentration_point(self, sample_points, agent):
         spl_vertices, spl_shape = self.get_FEM_functions(sample_points)
         x = 0
-
         for i in range(3):  # num riga
-            node = spl_vertices[i, agent]  # vertice i dell'elemento in cui si trova agent
-            #print(self.x_k.T[int(node)], self.x_k[0][int(node)])
+            node = spl_vertices[i, agent]  # vertice i dell'elemento in cui si trova l'agente
             x += spl_shape[i, agent] * self.x_k[0][int(node)]
-            #print(int(node), 'spl_shape[i, agent]', spl_shape[i, agent], '\n self.x_k.T[int(node)]', self.x_k.T[int(node)])
 
         #print("Concentrazione:", x, "rilevata dall'agente", agent)
-        self.concentration_list[agent] = x
+        #print(x, self.noise)
+        self.concentration_list[agent] = x + self.noise
 
-    def concentration_checking(self, agent, agents_list):  # FARE CLASSE A PARTE?
-
-        if agent.get_name() == len(agents_list) - 1:  # se è quello centrale
-            #  max_concentration = np.max(self.concentration_list)
+    def max_concentration(self, agent, agents_list):
+        if agent.get_name() == len(agents_list) - 1:  # se è l'agente centrale
             index = np.argmax(self.concentration_list)  # agente che ha la concentrazione max
             if index == agent.get_name():
                 return 0
             else:
                 agent_b = agents_list[index]  # agente con concentrazione max
-                grad = 1 * (np.array(agent_b.get_position(), dtype=np.float64) - np.array(agent.get_position(),
+                dir = 1 * (np.array(agent_b.get_position(), dtype=np.float64) - np.array(agent.get_position(),
                                                                                           dtype=np.float64))
-                return grad
+                return dir
         else:
             return 0
 
@@ -110,19 +101,20 @@ class Simulation:
         return self.concentration_list
 
     def media_pesata_delle_direzioni(self, agents_list):
+        x_min = np.min(self.concentration_list)
         sum_concentrations = 0
         agent_c = agents_list[len(agents_list)-1]
         self.direction = 0
         for i in self.concentration_list:
-            sum_concentrations += i
+            sum_concentrations += (i - x_min)
         for j in range(len(agents_list)-1):
             agent = agents_list[j]
-            w_i = self.concentration_list[agent.get_name()] / sum_concentrations
+            w_i = (self.concentration_list[agent.get_name()] - x_min) / sum_concentrations
             self.direction += w_i * (np.array(agent.get_position()) - np.array(agent_c.get_position()))
         return self.direction
 
     def get_gradient(self, agents_list):
-        M = []  # matrice delle differenze delle pos con agente centrale
+        M = []  # matrice delle differenze delle posizioni con agente centrale
         v = []  # matrice delle differenze delle concentrazioni con agente centrale
         agent_c = agents_list[len(agents_list)-1]
 
@@ -133,10 +125,11 @@ class Simulation:
 
         v = np.array(v).T
         M = np.array(M)
-        grad_c = np.dot(np.dot(np.linalg.inv(np.dot(M.T, M)), M.T), v)
-        gradiente = np.linalg.lstsq(M, v, rcond=None)[0] #Return the least-squares solution to a linear matrix equation.
-        #print(grad_c, gradiente), grad_c=gradiente
+        grad_c = np.linalg.lstsq(M, v, rcond=None)[0] #Return the least-squares solution to a linear matrix equation.
         return grad_c
+
+    def set_x_k(self):
+        self.x_k = np.zeros((1, self.n_vertices))
 
 
 

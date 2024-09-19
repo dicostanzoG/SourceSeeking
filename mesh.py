@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib.patches import Polygon
+from shapely import Point
 
 
 def open_file(ax, mesh):
@@ -19,9 +20,11 @@ def open_file(ax, mesh):
         elements.append(polygon)
         ax.add_patch(polygon)
 
-    p = find_outer_edges(ele, xy, ax)  # limite mesh
+    polygon_vertices = find_outer_edges(ele, xy, ax)  # limite mesh
+    p = Polygon(polygon_vertices, closed=True, edgecolor='black', fill=False)
+
     ax.add_patch(p)
-    return elements, p
+    return elements, p, polygon_vertices
 
 
 def find_outer_edges(mesh_elements, mesh_vertices, ax):
@@ -32,7 +35,8 @@ def find_outer_edges(mesh_elements, mesh_vertices, ax):
     for j in range(mesh_elements.shape[1]):
         triangle = mesh_elements[:3, j]
         for i in range(3):
-            edge = tuple(sorted((triangle[i], triangle[(i + 1) % 3]))) # %3 calcola l'indice del prossimo vertice nel triangolo
+            edge = tuple(
+                sorted((triangle[i], triangle[(i + 1) % 3])))  # %3 calcola l'indice del prossimo vertice nel triangolo
             edges.add(edge)
             edge_counts[edge] = edge_counts.get(edge, 0) + 1
 
@@ -42,7 +46,7 @@ def find_outer_edges(mesh_elements, mesh_vertices, ax):
     for edge in outer_edges:
         vertex1 = mesh_vertices[:, int(edge[0] - 1)]
         vertex2 = mesh_vertices[:, int(edge[1] - 1)]
-        #ax.plot([vertex1[0], vertex2[0]], [vertex1[1], vertex2[1]], color='red')
+        # ax.plot([vertex1[0], vertex2[0]], [vertex1[1], vertex2[1]], color='red')
         if vertex1.tolist() not in polygon_vertices:
             polygon_vertices.append(vertex1.tolist())
         if vertex2.tolist() not in polygon_vertices:
@@ -54,6 +58,6 @@ def find_outer_edges(mesh_elements, mesh_vertices, ax):
     # ordinamento vertici in base all'angolo rispetto al centroide
     polygon_vertices.sort(key=lambda v: np.arctan2(v[1] - centroid[1], v[0] - centroid[0]))
 
-    p = Polygon(polygon_vertices, closed=True, edgecolor='red', fill=False)
-    return p
+    return polygon_vertices
+
 

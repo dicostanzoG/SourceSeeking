@@ -1,6 +1,7 @@
+import csv
 import matplotlib.pyplot as plt
 import networkx as nx
-import numpy as np
+import os
 from scipy.io import loadmat
 from graph import CreateGraph
 from artificialPotentialField import APFMotionPlanner
@@ -9,92 +10,248 @@ from simulation import Simulation
 import time
 
 
+def n_iter(interrupt, n_iterations, t):
+    if interrupt:
+        n_iterations.append(-1)
+    else:
+        n_iterations.append(t)
+    return n_iterations
+
+
+def get_source_pos(createGraph, source_positions, source_pos, t, ax):
+    if len(source_positions) == t + 1:
+        source_pos = createGraph.generate_source_movement(ax, source_pos)
+        source_positions.append(source_pos)
+    else:
+        source_pos = source_positions[t + 1]
+        createGraph.update_source_pos(source_pos)
+    return source_pos
+
+
+plt.rcParams['animation.ffmpeg_path'] = ('C:/Users/dicos/Downloads/ffmpeg-master-latest-win64-gpl/ffmpeg-master'
+                                         '-latest-win64-gpl/bin/ffmpeg.exe')
+ffmpeg_path = 'C:/Users/dicos/Downloads/ffmpeg-master-latest-win64-gpl/ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe'
+os.environ['PATH'] += os.pathsep + os.path.dirname(ffmpeg_path)
+output_folder = "C:/Users/dicos/PycharmProjects/SourceSeekingTesi/video/"
+
+output_folder_csv = "C:/Users/dicos/PycharmProjects/SourceSeekingTesi/csv/"
+
+
 def main():
-    a = 0
-    cc = []
-    results = {}
     g = nx.Graph()
+    n_experiments = 100
     r = 0.1
-    num_agents = 6
+    num_agents = 7
     Ts = 0.01
-    end = False
+    time_limit = 200
     agents_list = []
-    concentrations_list = []  # [[] for _ in range(num_agents)]
-    path = []
-    total_paths = []
-    distance = []
-    source_positions = []
-    c_obs = []
-    circles = []
-    time_ = []
+    concentrations_list = []
+    mc_n_iter = []
+    wm_n_iter = []
+    gm_n_iter = []
+    dist_m = []  # con ogni lista associata ad un metodo
+    methods = ['Max_concentration', 'Weighted_average', 'Gradient']
+
+    n_interrupted_mc = 0
+    n_interrupted_wa = 0
+    n_interrupted_grad = 0
+
+    results = {}
+
     file = loadmat('mesh.mat')
     mesh = file['mesh']
 
-    fig, ax = plt.subplots()
-    elements, p = open_file(ax, mesh)
-    polygon_vertices = p.get_xy()
+    for h in range(n_experiments):
+        print('\n ESPERIMENTO ' + str(h + 1))
 
-    simulator = Simulation(mesh, num_agents)
-    createGraph = CreateGraph(g, agents_list, num_agents, r, ax, p, simulator)
+        fig, ax = plt.subplots()
+        elements, p, polygon_vertices = open_file(ax, mesh)
+        source_positions = []
 
-    #  c_obs, circles = createGraph.generate_obstacles(c_obs)
+        simulator = Simulation(mesh, num_agents)
+        createGraph = CreateGraph(g, agents_list, num_agents, r, p, simulator, polygon_vertices)
 
-    g, sample_points = createGraph.generate_agent_graph(circles)
-    source_pos = createGraph.get_source(circles)
-    source_positions.append(source_pos)
+        source_pos_init = createGraph.get_source()
+        source_positions.append(source_pos_init)
 
-    motion_planner = APFMotionPlanner(source_pos, r, agents_list)
+        x_c, y_c = createGraph.get_agent_c(source_pos_init)
+        angles = createGraph.generate_agent_graph(x_c,
+                                                  y_c)  # genera i nodi intorno a quello centrale e calcola l'angolo
+        for method in methods:
+            print('\n-' + method)
+            source_pos = source_pos_init
+            start = time.time()
 
-    concentration = simulator.concentration(source_pos)
-    createGraph.plot_graph(0, circles, elements, concentration)
+            distance = []
+            time_ = []
+            total_paths = []
 
-    k = 0
-    while not end:
-        # g, source_pos = createGraph.generate_source_movement(source_pos)
-        # source_positions.append(source_pos)
+            end = False
+            interrupt = False
 
-        for i in (g.nodes.data()):
-            agent_name = i[0]
-            if agent_name != 'Source':
-                agent = agents_list[agent_name]
-                agent.set_speed(motion_planner.calculate_control(agent, circles, polygon_vertices, simulator))
-                pos, end = agent.update_pos(Ts, i, source_pos, end,
-                                            num_agents)  # aggiorna la posizione del robot con una velocità costante
+            concentration = simulator.concentration(source_pos)
+            createGraph.plot_graph(ax, 0, elements, concentration, method, h, total_paths, source_positions)
 
-                if motion_planner.formation_checking():
-                    sample_points = createGraph.update_sample_points(agent_name, pos[0],
-                                                                     pos[1])  # se considero sample_point=pos agenti
-                    simulator.concentration_point(sample_points,
-                                                  agent_name)  # concentrazione nel punto in cui si trova ogni agente
+            g, sample_points = createGraph.generate_graph(angles, x_c, y_c)
+            motion_planner = APFMotionPlanner(source_pos, r, agents_list)
 
-                path.insert(agent_name, agent.get_path())
-                if agent_name == num_agents - 1:
-                    distance.append(agent.get_distance())
+            t = 0  # istanti di t, tempo impiegato per raggiungere la sorgente
+            n_interrupted = 0
 
-            concentration = simulator.concentration(source_pos)  # nella mesh partendo dalla pos della sorgente
-            cc.append(concentration)
-        createGraph.plot_graph(k, circles, elements, concentration)
-        k += 1
+            while not end:
+                time_.append(t)
+                # source_pos = get_source_pos(createGraph, source_positions, source_pos, t, ax)
 
-        # time_.append(k)
-        # total_paths.append(path)
-        # concentrations_list.append(simulator.get_concentrations_list())
-        simulator.get_gradient(agents_list)
+                for i in g.nodes.data():
+                    agent_name = i[0]
+                    if agent_name != 'Source':
+                        agent = agents_list[agent_name]
+                        agent.set_speed(
+                            motion_planner.calculate_control(agent, polygon_vertices, simulator, method))
+                        pos, end = agent.update_pos(Ts, i, source_pos, end, num_agents)
 
-    print(np.min(cc), np.max(cc))  # 3.488374704160273e-06, 339.0628885768361 // 4.34305275992172e-07 194.59284352212381
+                        if motion_planner.formation_checking():
+                            sample_points = createGraph.update_sample_points(agent_name, pos[0], pos[1])
+                            simulator.concentration_point(sample_points, agent_name)
 
-    # results['time'] = time_
-    # results['path'] = total_paths
-    # results['concentrations'] = concentrations_list
-    # results['distance'] = distance
-    # results['source_position'] = source_positions  # source_pos
+                        if agent_name == num_agents - 1:
+                            distance.append(agent.get_distance())
+                            total_paths.append(pos)
 
-    # with open('results.csv', 'w', newline='') as file_csv:
-    #   writer = csv.writer(file_csv)
-    #   writer.writerow(results.keys())
-    #   writer.writerows(zip(*results.values()))
+                concentration = simulator.concentration(source_pos)
+                concentrations_list.append(concentration)
+                createGraph.plot_graph(ax, t, elements, concentration, method, h, total_paths, source_positions)
+
+                t += 1
+                simulator.get_gradient(agents_list)
+
+                if t >= time_limit:
+                    end = True
+                    interrupt = True
+                    n_interrupted += 1
+                    print('INTERROTTO')
+
+            end_time = time.time()
+
+            # dist_m.insert(methods.index(method), distance)
+            plt.cla()
+            plt.title('Distanza dalla sorgente: ' + method)
+            plt.plot(time_, distance, color='black')
+            plt.grid()
+            plt.xlabel('Tempo')
+            plt.ylabel('Distanza')
+            plt.savefig('img/Distanza media dalla Sorgente_' + method + str(h) + '.png')
+
+            if method == methods[0]:
+                mc_n_iter = n_iter(interrupt, mc_n_iter, t)
+                n_interrupted_mc += n_interrupted
+            elif method == methods[1]:
+                wm_n_iter = n_iter(interrupt, wm_n_iter, t)
+                n_interrupted_wa += n_interrupted
+            elif method == methods[2]:
+                gm_n_iter = n_iter(interrupt, gm_n_iter, t)
+                n_interrupted_grad += n_interrupted
+
+            agents_list = createGraph.set_agents_list([])
+            simulator.set_x_k()
+            print('tempo impiegato: ', t, 'tempo reale: ', end_time - start)
+
+            plt.cla()
+            createGraph.plot_graph(ax, 'Total Path', elements, concentration, method, h, total_paths, source_positions)
+
+            # crea video
+            input_pattern = f"C:/Users/dicos/PycharmProjects/SourceSeekingTesi/img/{method}_{h}_img_%d.png"
+            output_file = f"{output_folder}SourceSeeking_{method}_{h}.mp4"
+            command = f"ffmpeg -r 8 -i {input_pattern} -vcodec mpeg4 -y {output_file} > NUL 2>&1"
+            os.system(command)
+
+            # cancella immagini dopo aver creato il video
+            for i in range(t):
+                img_filename = f'img/{method}_{h}_img_{i}.png'
+                os.remove(img_filename)
+
+            # crea file csv
+            results['time'] = time_
+            results['path'] = total_paths
+            results['concentrations'] = concentrations_list
+            results['distance'] = distance
+            results['source_position'] = source_positions  # source_pos
+
+            csv_file = os.path.join(output_folder_csv, f"{method}_{h}_results.csv")
+
+            with open(csv_file, 'w', newline='') as file_csv:
+                writer = csv.writer(file_csv)
+                writer.writerow(results.keys())
+                writer.writerows(zip(*results.values()))
+
+        plt.close(fig)
+
+    percentage_mc = (n_interrupted_mc / n_experiments) * 100
+    percentage_wa = (n_interrupted_wa / n_experiments) * 100
+    percentage_grad = (n_interrupted_grad / n_experiments) * 100
+
+    results['percentage_mc'] = [percentage_mc]
+    print('Percentuale di esperimenti interrotti: ' + str(percentage_mc) + '%')
+
+    results['percentage_wa'] = [percentage_wa]
+    print('Percentuale di esperimenti interrotti: ' + str(percentage_wa) + '%')
+
+    results['percentage_grad'] = [percentage_grad]
+    print('Percentuale di esperimenti interrotti: ' + str(percentage_grad) + '%')
+
+    '''''''''''
+    plt.cla()
+    plt.title('Distanza media dalla sorgente')
+    plt.plot(range(len(dist_m[0])), dist_m[0], label=methods[0])
+    plt.plot(range(len(dist_m[1])), dist_m[1], label=methods[1])
+    plt.plot(range(len(dist_m[2])), dist_m[2], label=methods[2])
+    plt.legend()
+    plt.xlabel('Tempo')
+    plt.ylabel('Distanza')
+    plt.savefig('img/Distanza media dalla Sorgente_' + '.png')
+
+    plt.cla()
+    plt.title('Distanza dalla sorgente' + methods[0])
+    plt.plot(range(len(dist_m[0])), dist_m[0], label=methods[0])
+    plt.legend()
+    plt.xlabel('Tempo')
+    plt.ylabel('Distanza')
+    plt.savefig('img/Distanza media dalla Sorgente_' + methods[0] + '_.png')
+
+    plt.cla()
+    plt.title('Distanza dalla sorgente' + methods[1])
+    plt.plot(range(len(dist_m[1])), dist_m[1], label=methods[1])
+    plt.legend()
+    plt.xlabel('Tempo')
+    plt.ylabel('Distanza')
+    plt.savefig('img/Distanza media dalla Sorgente_' + methods[1] + '_.png')
+
+    plt.cla()
+    plt.title('Distanza dalla sorgente' + methods[2])
+    plt.plot(len(dist_m[2]), dist_m[2], label=methods[2])
+    plt.legend()
+    plt.xlabel('Tempo')
+    plt.ylabel('Distanza')
+    plt.savefig('img/Distanza media dalla Sorgente_' + methods[2] + '_.png')
+    '''''
+    # crea istogramma
+    print(mc_n_iter, wm_n_iter, gm_n_iter)
+    mc_n_iter = [x for x in mc_n_iter if x != -1]
+    wm_n_iter = [x for x in wm_n_iter if x != -1]
+    gm_n_iter = [x for x in gm_n_iter if x != -1]
+    print(mc_n_iter, wm_n_iter, gm_n_iter)
+
+    text = [('Max_concentration \n interrupted: ' + str(percentage_mc) + '%'),
+            ('Weighted_average \n interrupted: ' + str(percentage_wa) + '%'),
+            ('Gradient \n interrupted: ' + str(percentage_grad) + '%')]
+    plt.cla()
+    plt.hist([mc_n_iter, wm_n_iter, gm_n_iter], edgecolor='black', label=text)
+    plt.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left')
+    plt.title('Distribuzione dei Tempi per Raggiungere la Sorgente')
+    plt.xlabel('Tempo')
+    plt.ylabel('Numero di Esperimenti')
+    plt.savefig('img/Hist_tot_' + '.png', bbox_inches='tight')
 
 
 if __name__ == '__main__':
     main()
-    # os.system("ffmpeg -r 8 -i C:/Users/dicos/PycharmProjects/SourceSeekingTesi/img_%d.png -vcodec mpeg4 -y prm_eps_n.mp4")
