@@ -235,11 +235,9 @@ def main():
     plt.savefig('img/Distanza media dalla Sorgente_' + methods[2] + '_.png')
     '''''
     # crea istogramma
-    print(mc_n_iter, wm_n_iter, gm_n_iter)
     mc_n_iter = [x for x in mc_n_iter if x != -1]
     wm_n_iter = [x for x in wm_n_iter if x != -1]
     gm_n_iter = [x for x in gm_n_iter if x != -1]
-    print(mc_n_iter, wm_n_iter, gm_n_iter)
 
     text = [('Max_concentration \n interrupted: ' + str(percentage_mc) + '%'),
             ('Weighted_average \n interrupted: ' + str(percentage_wa) + '%'),
