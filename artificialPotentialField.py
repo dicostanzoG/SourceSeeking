@@ -7,8 +7,8 @@ class APFMotionPlanner:
         self.source_pos = np.array(source_pos)  # pos sorgente
         self.k_att = 1  # coefficiente attrattivo
         self.r = r
-        self.k_rep_agents = 0.12
-        self.k_rep_central = 0.15
+        self.k_rep_agents = 0.08
+        self.k_rep_central = 0.05
         self.k_rep_obs = 0.1
         self.k_pol = 0.1  # perimetro
         self.agents_list = agents_list
