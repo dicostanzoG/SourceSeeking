@@ -10,7 +10,7 @@ class APFMotionPlanner:
         self.k_rep_agents = 0.08
         self.k_rep_central = 0.05
         self.k_rep_obs = 0.1
-        self.k_pol = 0.1  # perimetro
+        self.k_pol = 0.3  # perimetro
         self.agents_list = agents_list
         self.a = self.r * math.cos(math.pi / (len(self.agents_list) - 1))  # apotema
         self.l = 2 * math.sqrt(self.r ** 2 - self.a ** 2)  # lato poligono
