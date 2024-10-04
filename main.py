@@ -123,7 +123,6 @@ def main():
                 createGraph.plot_graph(ax, t, elements, concentration, method, h, total_paths, source_positions)
 
                 t += 1
-                simulator.get_gradient(agents_list)
 
                 if t >= time_limit:
                     end = True
